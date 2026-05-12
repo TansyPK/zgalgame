@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 720">
+  <ellipse cx="180" cy="676" rx="126" ry="28" fill="#000" opacity=".18"/>
+  <path d="M86 342c-38 38-58 116-60 234h308c-2-118-22-196-60-234-48-48-140-48-188 0z" fill="#26364a"/>
+  <path d="M112 374h136l34 202H78z" fill="#f2efe7"/>
+  <path d="M120 232h120v106c0 34-27 61-60 61s-60-27-60-61z" fill="#edc3a6"/>
+  <path d="M102 186c9-58 65-94 124-74 41 14 68 58 58 116-25-17-53-26-85-27-46-2-80 13-111 43-3-21 1-41 14-58z" fill="#1d232d"/>
+  <rect x="134" y="266" width="38" height="18" rx="9" fill="none" stroke="#26364a" stroke-width="7"/>
+  <rect x="188" y="266" width="38" height="18" rx="9" fill="none" stroke="#26364a" stroke-width="7"/>
+  <path d="M172 275h16" stroke="#26364a" stroke-width="7" stroke-linecap="round"/>
+  <path d="M158 315c18 12 38 12 56 0" fill="none" stroke="#8b594e" stroke-width="7" stroke-linecap="round"/>
+  <path d="M112 374l68 94 68-94 34 202H78z" fill="#26364a" opacity=".9"/>
+  <path d="M268 432c48 30 66 88 54 174l-48-8c8-61-5-104-38-130z" fill="#1d2a3b"/>
+  <path d="M92 432c-48 30-66 88-54 174l48-8c-8-61 5-104 38-130z" fill="#1d2a3b"/>
+</svg>
