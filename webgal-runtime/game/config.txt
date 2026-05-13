@@ -1,6 +1,6 @@
 Game_name:白月光吧。;
 Game_key:0f87dstRg;
-Title_img:bg-courtyard.jpg;
+Title_img:bg-courtyard-960.jpg;
 Title_bgm:;
 Game_Logo:bg-evening.svg;
 Enable_Appreciation:false;
