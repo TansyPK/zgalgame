@@ -127,7 +127,21 @@
         padding: 0 0 0.25em 0;
       }
 
+      #root ._trans_ny6ov_2 {
+        opacity: 0;
+        pointer-events: none;
+      }
+
     </style>
+    <script>
+      (() => {
+        document.documentElement.lang = 'zh-Hans';
+        try {
+          window.localStorage.setItem('lang', '0');
+          window.localStorage.setItem('i18nextLng', 'zhCn');
+        } catch {}
+      })();
+    </script>
     <script type="module" crossorigin src="./assets/index-D8QblN30.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-n6Bd-mPa.css">
   </head>
@@ -380,10 +394,34 @@
             delete window.renderPromiseResolve;
           };
         });
+        const autoChooseLanguage = () => {
+          try {
+            window.localStorage.setItem('lang', '0');
+          } catch {}
+          const buttons = Array.from(document.querySelectorAll('#root [class*="_langSelectButton_"]')).filter((element) => {
+            const rect = element.getBoundingClientRect();
+            return rect.width > 0 || rect.height > 0;
+          });
+          const zhCnButton =
+            buttons.find((element) => /简体中文|简体|中文/.test(element.textContent || '')) ||
+            buttons[0];
+          if (!zhCnButton) return false;
+          HTMLDivElement.prototype.click.call(zhCnButton);
+          zhCnButton.click();
+          zhCnButton.dispatchEvent(
+            new MouseEvent('click', {
+              view: window,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          return true;
+        };
         const autoEnterStory = () => {
           let attempts = 0;
           const timer = window.setInterval(() => {
             attempts += 1;
+            autoChooseLanguage();
             dispatchEnterTarget();
             const titleButtons = Array.from(document.querySelectorAll('#root [class*="_Title_button_"]')).filter((element) => {
               const rect = element.getBoundingClientRect();
@@ -428,6 +466,7 @@
         };
         // 将播放bgm的事件发送出去
         Promise.all([enterPromise, renderPromise]).then(() => {
+          autoChooseLanguage();
           dispatchEnterTarget();
           autoEnterStory();
         });
@@ -442,6 +481,7 @@
               titleEnter.style.display = 'none';
             }
             dispatchEnterTarget();
+            autoChooseLanguage();
             autoEnterStory();
             enterPromiseResolve();
             return;
@@ -474,6 +514,7 @@
           }, Math.max(enterConfig.hideDelay, 1200)); // 将落地页设置为不显示
           enterPromiseResolve();
           renderPromise.then(() => {
+            autoChooseLanguage();
             dispatchEnterTarget();
             autoEnterStory();
           });
