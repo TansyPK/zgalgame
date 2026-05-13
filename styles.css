@@ -503,7 +503,7 @@ button {
 }
 
 .thumb.one {
-  background-image: url("./assets/bg-courtyard.png");
+  background-image: url("./assets/bg-courtyard.jpg");
 }
 
 .thumb.two {
@@ -515,7 +515,7 @@ button {
 }
 
 .thumb.bg-courtyard {
-  background-image: url("./assets/bg-courtyard.png");
+  background-image: url("./assets/bg-courtyard.jpg");
 }
 
 .vote {
@@ -797,7 +797,7 @@ button {
   aspect-ratio: 16 / 8;
   background:
     linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.48)),
-    url("./assets/bg-night-bar.png") center / cover;
+    url("./assets/bg-night-bar.jpg") center / cover;
 }
 
 .side-immerse b,
