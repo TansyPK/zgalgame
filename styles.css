@@ -837,6 +837,7 @@ button {
 }
 
 .inline-engine {
+  position: relative;
   width: 100%;
   height: min(620px, calc(100vh - 96px));
   min-height: 500px;
@@ -1120,10 +1121,52 @@ button {
 }
 
 .webgal-frame {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: calc(100% - 58px);
   border: 0;
-  background: #000;
+  background: transparent;
+}
+
+.webgal-boot {
+  position: absolute;
+  inset: 58px 0 0;
+  z-index: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(48, 93, 155, 0.3), transparent 34%),
+    linear-gradient(180deg, #05070b 0%, #101725 100%);
+  color: rgba(255, 255, 255, 0.78);
+  text-align: center;
+}
+
+.webgal-boot-mark {
+  width: 34px;
+  height: 34px;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-top-color: rgba(255, 255, 255, 0.82);
+  border-radius: 50%;
+  animation: bootSpin 0.9s linear infinite;
+}
+
+.webgal-boot b {
+  font-size: 17px;
+  letter-spacing: 0;
+}
+
+.webgal-boot span {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.52);
+}
+
+@keyframes bootSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .vn-topbar {

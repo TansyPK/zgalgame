@@ -26,6 +26,8 @@ const mime = {
   ".txt": "text/plain; charset=utf-8"
 };
 
+const compressedTypes = new Set([".js", ".css"]);
+
 function send(res, status, body, headers = {}) {
   res.writeHead(status, {
     "Access-Control-Allow-Origin": "*",
@@ -45,18 +47,30 @@ function sendJson(res, status, body) {
 function serveStatic(req, res, pathname) {
   const entryPath = pathname === "/" || pathname === "/oauth/callback" ? "/index.html" : pathname;
   const safePath = path.normalize(entryPath).replace(/^(\.\.[/\\])+/, "");
-  const filePath = path.join(root, safePath);
+  let filePath = path.join(root, safePath);
   if (!filePath.startsWith(root)) {
     send(res, 403, "Forbidden");
     return;
+  }
+  const ext = path.extname(filePath);
+  const acceptsGzip = /\bgzip\b/.test(req.headers["accept-encoding"] || "");
+  let encodingHeaders = {};
+  if (acceptsGzip && compressedTypes.has(ext) && fs.existsSync(`${filePath}.gz`)) {
+    filePath = `${filePath}.gz`;
+    encodingHeaders = { "content-encoding": "gzip", vary: "Accept-Encoding" };
   }
   fs.readFile(filePath, (error, content) => {
     if (error) {
       send(res, 404, "Not found");
       return;
     }
+    const originalExt = filePath.endsWith(".gz") ? path.extname(filePath.slice(0, -3)) : path.extname(filePath);
+    const isAsset = entryPath.startsWith("/assets/") || entryPath.startsWith("/webgal-runtime/assets/");
     send(res, 200, content, {
-      "content-type": mime[path.extname(filePath)] || "application/octet-stream"
+      "content-type": mime[originalExt] || "application/octet-stream",
+      "content-length": content.length,
+      "cache-control": isAsset ? "public, max-age=31536000, immutable" : "no-cache",
+      ...encodingHeaders
     });
   });
 }

@@ -469,10 +469,12 @@
             if (titleEnter) {
               titleEnter.style.display = 'none';
             }
-          }, enterConfig.hideDelay); // 将落地页设置为不显示
-          dispatchEnterTarget();
-          autoEnterStory();
+          }, Math.max(enterConfig.hideDelay, 1200)); // 将落地页设置为不显示
           enterPromiseResolve();
+          renderPromise.then(() => {
+            dispatchEnterTarget();
+            autoEnterStory();
+          });
         };
         const titleEnter = document.querySelector('.html-body__title-enter');
         if (titleEnter) {

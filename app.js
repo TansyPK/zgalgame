@@ -755,8 +755,29 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function preloadWebgalRuntime() {
+  const resources = [
+    ["/webgal-runtime/index.html", "document"],
+    ["/webgal-runtime/assets/index-D8QblN30.js", "script"],
+    ["/webgal-runtime/assets/index-n6Bd-mPa.css", "style"],
+    ["/webgal-runtime/game/config.txt", "fetch"],
+    ["/webgal-runtime/game/scene/start.txt", "fetch"],
+    ["/webgal-runtime/game/background/bg-courtyard.jpg", "image"]
+  ];
+  resources.forEach(([href, as]) => {
+    if (document.head.querySelector(`link[data-webgal-preload][href="${href}"]`)) return;
+    const link = document.createElement("link");
+    link.rel = "prefetch";
+    link.href = href;
+    link.as = as;
+    link.dataset.webgalPreload = "true";
+    document.head.appendChild(link);
+  });
+}
+
 async function startGenerationFlow(source) {
   if (!source) return;
+  preloadWebgalRuntime();
   const steps = [
     "AI 生成脚本中",
     "AI 绘画匹配中",
@@ -782,6 +803,7 @@ async function startGenerationFlow(source) {
 
 async function startWebgalRuntime(source = state.vn) {
   if (!source) return;
+  preloadWebgalRuntime();
   const answer = source.answer;
   const immersive = source.immersive || { script: source.script };
   await fetch("/api/webgal/start", {
@@ -811,6 +833,11 @@ function renderWebgalRuntime() {
       <div class="webgal-topbar">
         <div class="vn-title"><b>${h(state.webgal.title)}</b><span>沉浸阅读</span></div>
         <button class="icon-btn" type="button" data-close-webgal aria-label="关闭">×</button>
+      </div>
+      <div class="webgal-boot" aria-hidden="true">
+        <div class="webgal-boot-mark"></div>
+        <b>正在进入沉浸阅读</b>
+        <span>加载 WebGAL 引擎与场景资源</span>
       </div>
       <iframe class="webgal-frame" src="${h(state.webgal.src)}" title="OpenWebGAL Runtime"></iframe>
     </section>
