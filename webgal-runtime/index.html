@@ -384,6 +384,7 @@
           let attempts = 0;
           const timer = window.setInterval(() => {
             attempts += 1;
+            dispatchEnterTarget();
             const titleButtons = Array.from(document.querySelectorAll('#root [class*="_Title_button_"]')).filter((element) => {
               const rect = element.getBoundingClientRect();
               if (rect.width === 0 || rect.height === 0) return false;
@@ -396,6 +397,7 @@
               titleButtons.find((element) => /开始游戏|START|Start/.test(element.textContent || '')) ||
               titleButtons[0];
             if (titleButton) {
+              HTMLDivElement.prototype.click.call(titleButton);
               titleButton.click();
               titleButton.dispatchEvent(
                 new MouseEvent('click', {
@@ -404,9 +406,9 @@
                   cancelable: true,
                 }),
               );
-              window.clearInterval(timer);
             }
-            if (attempts > 40) {
+            const hasTextBox = document.querySelector('[class*="_TextBox_"], [class*="_TextBox_main_"], [class*="_MainStage_"]');
+            if (hasTextBox || attempts > 80) {
               window.clearInterval(timer);
             }
           }, 150);
