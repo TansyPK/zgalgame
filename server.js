@@ -65,7 +65,11 @@ function serveStatic(req, res, pathname) {
       return;
     }
     const originalExt = filePath.endsWith(".gz") ? path.extname(filePath.slice(0, -3)) : path.extname(filePath);
-    const isAsset = entryPath.startsWith("/assets/") || entryPath.startsWith("/webgal-runtime/assets/");
+    const isAsset =
+      entryPath.startsWith("/assets/") ||
+      entryPath.startsWith("/webgal-runtime/assets/") ||
+      entryPath.startsWith("/webgal-runtime/game/background/") ||
+      entryPath.startsWith("/webgal-runtime/game/figure/");
     send(res, 200, content, {
       "content-type": mime[originalExt] || "application/octet-stream",
       "content-length": content.length,

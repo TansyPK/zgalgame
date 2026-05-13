@@ -757,22 +757,38 @@ function wait(ms) {
 
 function preloadWebgalRuntime() {
   const resources = [
-    ["/webgal-runtime/index.html", "document"],
-    ["/webgal-runtime/assets/index-D8QblN30.js", "script"],
-    ["/webgal-runtime/assets/index-n6Bd-mPa.css", "style"],
-    ["/webgal-runtime/game/config.txt", "fetch"],
-    ["/webgal-runtime/game/scene/start.txt", "fetch"],
-    ["/webgal-runtime/game/background/bg-courtyard-960.jpg", "image"]
+    ["/webgal-runtime/index.html", "document", "prefetch"],
+    ["/webgal-runtime/assets/index-D8QblN30.js", "script", "prefetch"],
+    ["/webgal-runtime/assets/index-n6Bd-mPa.css", "style", "prefetch"],
+    ["/webgal-runtime/game/config.txt", "fetch", "prefetch"],
+    ["/webgal-runtime/game/scene/start.txt", "fetch", "prefetch"],
+    ["/webgal-runtime/game/background/bg-courtyard-960.jpg", "image", "preload"],
+    ["/webgal-runtime/game/figure/fig-boy-him-480.png", "image", "preload"],
+    ["/webgal-runtime/game/figure/fig-girl-her-480.png", "image", "preload"],
+    ["/webgal-runtime/game/figure/fig-adult-him-480.png", "image", "preload"],
+    ["/webgal-runtime/game/figure/fig-adult-her-480.png", "image", "preload"]
   ];
-  resources.forEach(([href, as]) => {
+  resources.forEach(([href, as, rel]) => {
     if (document.head.querySelector(`link[data-webgal-preload][href="${href}"]`)) return;
     const link = document.createElement("link");
-    link.rel = "prefetch";
+    link.rel = rel;
     link.href = href;
     link.as = as;
+    if (as === "fetch") link.crossOrigin = "anonymous";
     link.dataset.webgalPreload = "true";
     document.head.appendChild(link);
   });
+  resources
+    .filter(([, as]) => as === "image")
+    .forEach(([href]) => {
+      if (state.preloadedImages?.has(href)) return;
+      state.preloadedImages ??= new Set();
+      state.preloadedImages.add(href);
+      const image = new Image();
+      image.decoding = "async";
+      image.src = href;
+      image.decode?.().catch(() => {});
+    });
 }
 
 async function startGenerationFlow(source) {
