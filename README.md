@@ -32,8 +32,12 @@ http://127.0.0.1:5173
 ZHIHU_APP_ID=your_app_id \
 ZHIHU_APP_KEY=your_app_key \
 ZHIHU_REDIRECT_URI=http://127.0.0.1:5173/oauth/callback \
+ZHIHU_STORY_APP_KEY=your_story_app_key \
+ZHIHU_STORY_APP_SECRET=your_story_app_secret \
 npm start
 ```
+
+`ZHIHU_APP_ID/ZHIHU_APP_KEY` 只用于 OAuth 换取用户 `access_token`。`ZHIHU_STORY_APP_KEY/ZHIHU_STORY_APP_SECRET` 只用于 `hackathon_story` 列表和详情接口签名，两套凭据互不混用。
 
 不要把 `.env`、app key 或任何私有凭据提交到仓库。
 
@@ -71,7 +75,7 @@ webgal-export/demo-answer/game/scene/start.txt
 发布前建议执行：
 
 ```bash
-rg -n "token|secret|app_key|appKey|access_token|authorization|Bearer|password|ZHIHU_APP_KEY|sk-" .
+rg -n "token|secret|app_key|appKey|access_token|authorization|Bearer|password|ZHIHU_APP_KEY|ZHIHU_STORY|sk-" .
 git status --short
 ```
 

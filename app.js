@@ -267,6 +267,18 @@ function accessTokenFromPayload(payload) {
   );
 }
 
+function apiErrorMessage(body, fallback) {
+  const data = body?.data?.data || body?.data || body;
+  return (
+    body?.message ||
+    data?.message ||
+    data?.msg ||
+    data?.data ||
+    data?.error?.message ||
+    fallback
+  );
+}
+
 function plainText(value) {
   return String(value || "")
     .replace(/<[^>]*>/g, "")
@@ -535,7 +547,7 @@ async function exchangeAuthCode(code) {
     if (!response.ok || !token) {
       state.dataSource = {
         status: "auth",
-        message: body.message || "auth_code 换取 access_token 失败，请检查 OAuth 参数。",
+        message: apiErrorMessage(body, "auth_code 换取 access_token 失败，请检查 OAuth 参数。"),
         raw: body
       };
       render();

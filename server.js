@@ -36,6 +36,8 @@ const host = process.env.HOST || "127.0.0.1";
 const openapiBase = "https://openapi.zhihu.com";
 const appId = process.env.ZHIHU_APP_ID || "";
 const appKey = process.env.ZHIHU_APP_KEY || "";
+const storyAppKey = process.env.ZHIHU_STORY_APP_KEY || "";
+const storyAppSecret = process.env.ZHIHU_STORY_APP_SECRET || "";
 const redirectUri = process.env.ZHIHU_REDIRECT_URI || `http://localhost:${port}/oauth/callback`;
 const dataDir = path.join(root, ".data");
 const choicesFile = path.join(dataDir, "webgal-choices.json");
@@ -117,15 +119,11 @@ function getBearerToken(req) {
   return "";
 }
 
-function buildZhihuSign({ method, pathname, search, timestamp, logId, extraInfo }) {
-  if (!appKey) return "";
+function buildZhihuSign({ timestamp, logId, extraInfo }) {
+  if (!storyAppKey || !storyAppSecret) return "";
 
-  // The pasted docs list required signature headers but omit the canonical
-  // string. Keep the algorithm isolated here so it can be adjusted once the
-  // official quickstart's signature rule is available.
-  const secret = appKey;
-  const canonical = [method.toUpperCase(), pathname, search || "", timestamp, logId, extraInfo || ""].join("\n");
-  return crypto.createHmac("sha256", secret).update(canonical).digest("hex");
+  const signStr = `app_key:${storyAppKey}|ts:${timestamp}|logid:${logId}|extra_info:${extraInfo || ""}`;
+  return crypto.createHmac("sha256", storyAppSecret).update(signStr).digest("base64");
 }
 
 function zhihuStoryHeaders(req, targetUrl) {
@@ -137,14 +135,11 @@ function zhihuStoryHeaders(req, targetUrl) {
     "user-agent":
       req.headers["user-agent"] ||
       "Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-    "x-app-key": appKey,
+    "x-app-key": storyAppKey,
     "x-timestamp": timestamp,
     "x-log-id": logId,
     "x-extra-info": extraInfo,
     "x-sign": buildZhihuSign({
-      method: "GET",
-      pathname: targetUrl.pathname,
-      search: targetUrl.search,
       timestamp,
       logId,
       extraInfo
@@ -258,29 +253,37 @@ async function proxyOAuthToken(req, res) {
     return;
   }
   const incoming = JSON.parse((await readBody(req)).toString("utf8") || "{}");
-  const body = Buffer.from(
-    JSON.stringify({
-      grant_type: "authorization_code",
-      code: incoming.code,
-      redirect_uri: redirectUri,
-      app_id: appId,
-      app_key: appKey
-    })
-  );
-  const target = new URL(`${openapiBase}/oauth/access_token`);
+  const authorizationCode = incoming.authorization_code || incoming.code;
+  if (!authorizationCode) {
+    sendJson(res, 400, { ok: false, message: "缺少 authorization_code。" });
+    return;
+  }
+  const form = new URLSearchParams({
+    app_id: appId,
+    app_key: appKey,
+    grant_type: "authorization_code",
+    redirect_uri: redirectUri,
+    code: authorizationCode
+  });
+  const body = Buffer.from(form.toString());
+  const target = new URL(`${openapiBase}/access_token`);
   const result = await requestJson(
     target,
     {
       method: "POST",
       headers: {
-        ...openapiHeaders(req),
-        "content-type": "application/json",
+        accept: "application/json, text/plain, */*",
+        "content-type": "application/x-www-form-urlencoded",
         "content-length": body.length
       }
     },
     body
   );
-  sendJson(res, result.statusCode, { ok: result.statusCode < 400, data: result.data });
+  sendJson(res, result.statusCode, {
+    ok: result.statusCode < 400 && !result.data?.code,
+    endpoint: "POST /access_token form",
+    data: result.data
+  });
 }
 
 async function proxyOAuthUser(req, res) {
@@ -408,11 +411,11 @@ function readWebgalStats(req, res) {
 }
 
 async function proxyStory(req, res, kind) {
-  if (!appKey) {
+  if (!storyAppKey || !storyAppSecret) {
     sendJson(res, 428, {
       ok: false,
       missingConfig: true,
-      message: "缺少 ZHIHU_APP_KEY，无法调用黑客松故事接口。"
+      message: "缺少 ZHIHU_STORY_APP_KEY 或 ZHIHU_STORY_APP_SECRET，无法调用黑客松故事接口。"
     });
     return;
   }
@@ -531,6 +534,7 @@ const server = http.createServer((req, res) => {
       ok: Boolean(appId),
       appIdConfigured: Boolean(appId),
       appKeyConfigured: Boolean(appKey),
+      storyConfigured: Boolean(storyAppKey && storyAppSecret),
       redirectUri,
       authorizeUrl: authorize.toString(),
       message: appId ? "OAuth 配置已就绪。" : "缺少 ZHIHU_APP_ID，授权地址暂不可用。"
