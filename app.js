@@ -1270,8 +1270,8 @@ function renderVn() {
         </div>
       </div>
       <div class="vn-shell">
-        <div class="vn-stage" style="--scene-bg: url('./assets/${h(stage.bg)}')">
-          <img class="figure" src="./assets/${h(stage.figure)}" alt="" />
+        <div class="vn-stage" style="--scene-bg: url('/assets/${h(stage.bg)}')">
+          <img class="figure" src="/assets/${h(stage.figure)}" alt="" />
           <div class="vn-dialogue">
             <div class="speaker">${h(stage.speaker)}</div>
             ${stage.mood ? `<div class="mood-chip">${h(stage.mood)} · 自动资源匹配</div>` : ""}
