@@ -132,6 +132,11 @@
         pointer-events: none;
       }
 
+      #root [class*="_Title_main_"] {
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }
+
     </style>
     <script>
       (() => {
@@ -185,6 +190,33 @@
           isIOSPhone,
           isIPad,
         };
+      })();
+    </script>
+    <script>
+      (() => {
+        const postChoice = (label) => {
+          const normalized = String(label || '').trim();
+          if (!normalized) return;
+          window.parent?.postMessage(
+            {
+              source: 'zgalgame-webgal',
+              type: 'choice',
+              label: normalized,
+            },
+            window.location.origin,
+          );
+        };
+        document.addEventListener(
+          'click',
+          (event) => {
+            const target = event.target?.closest?.('[class*="_Choose_item_"]');
+            if (!target) return;
+            const classes = Array.from(target.classList || []);
+            if (classes.some((name) => name.toLowerCase().includes('disabled'))) return;
+            postChoice(target.textContent);
+          },
+          true,
+        );
       })();
     </script>
     <!-- 在窗口大小改变时进行强制缩放 -->
@@ -386,9 +418,7 @@
     <script>
       (() => {
         const isIOS = window.__WEBGAL_DEVICE_INFO__?.isIOS ?? false;
-        const enterConfig = isIOS
-          ? { skipAnimation: true, hideDelay: 0 }
-          : { skipAnimation: false, hideDelay: 2000 };
+        const enterConfig = { skipAnimation: true, hideDelay: 0 };
         let enterPromiseResolve;
         const enterPromise = new Promise((res) => {
           enterPromiseResolve = res;
@@ -399,6 +429,7 @@
             delete window.renderPromiseResolve;
           };
         });
+        let titleObserver = null;
         const autoChooseLanguage = () => {
           try {
             window.localStorage.setItem('lang', '0');
@@ -422,37 +453,53 @@
           );
           return true;
         };
+        const clickTitleStart = () => {
+          const titleButtons = Array.from(document.querySelectorAll('#root [class*="_Title_button_"]')).filter((element) => {
+            const rect = element.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) return false;
+            const classes = Array.from(element.classList || []);
+            const isButton = classes.some((name) => /^_Title_button_[a-z0-9]+_\d+$/i.test(name));
+            const disabled = classes.some((name) => name.toLowerCase().includes('disabled'));
+            return isButton && !disabled;
+          });
+          const titleButton =
+            titleButtons.find((element) => /开始游戏|START|Start/.test(element.textContent || '')) ||
+            titleButtons[0];
+          if (!titleButton) return false;
+          HTMLDivElement.prototype.click.call(titleButton);
+          titleButton.click();
+          titleButton.dispatchEvent(
+            new MouseEvent('click', {
+              view: window,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          return true;
+        };
+        const observeTitleStart = () => {
+          if (titleObserver) return;
+          const root = document.querySelector('#root');
+          if (!root) return;
+          titleObserver = new MutationObserver(() => {
+            autoChooseLanguage();
+            clickTitleStart();
+          });
+          titleObserver.observe(root, { childList: true, subtree: true });
+        };
         const autoEnterStory = () => {
+          observeTitleStart();
           let attempts = 0;
           const timer = window.setInterval(() => {
             attempts += 1;
             autoChooseLanguage();
             dispatchEnterTarget();
-            const titleButtons = Array.from(document.querySelectorAll('#root [class*="_Title_button_"]')).filter((element) => {
-              const rect = element.getBoundingClientRect();
-              if (rect.width === 0 || rect.height === 0) return false;
-              const classes = Array.from(element.classList || []);
-              const isButton = classes.some((name) => /^_Title_button_[a-z0-9]+_\d+$/i.test(name));
-              const disabled = classes.some((name) => name.toLowerCase().includes('disabled'));
-              return isButton && !disabled;
-            });
-            const titleButton =
-              titleButtons.find((element) => /开始游戏|START|Start/.test(element.textContent || '')) ||
-              titleButtons[0];
-            if (titleButton) {
-              HTMLDivElement.prototype.click.call(titleButton);
-              titleButton.click();
-              titleButton.dispatchEvent(
-                new MouseEvent('click', {
-                  view: window,
-                  bubbles: true,
-                  cancelable: true,
-                }),
-              );
-            }
-            const hasTextBox = document.querySelector('[class*="_TextBox_"], [class*="_TextBox_main_"], [class*="_MainStage_"]');
-            if (hasTextBox || attempts > 80) {
+            clickTitleStart();
+            const hasTextBox = document.querySelector('[class*="_TextBox_"], [class*="_TextBox_main_"]');
+            if (hasTextBox || attempts > 120) {
               window.clearInterval(timer);
+              titleObserver?.disconnect();
+              titleObserver = null;
             }
           }, 150);
         };

@@ -6,12 +6,39 @@ const crypto = require("node:crypto");
 const { URL } = require("node:url");
 
 const root = __dirname;
+
+function loadDotEnv() {
+  const envPath = path.join(root, ".env");
+  if (!fs.existsSync(envPath)) return;
+  const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match) continue;
+    const key = match[1];
+    if (process.env[key] !== undefined) continue;
+    let value = match[2].trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    process.env[key] = value;
+  }
+}
+
+loadDotEnv();
+
 const port = Number(process.env.PORT || 5173);
 const host = process.env.HOST || "127.0.0.1";
 const openapiBase = "https://openapi.zhihu.com";
 const appId = process.env.ZHIHU_APP_ID || "";
 const appKey = process.env.ZHIHU_APP_KEY || "";
 const redirectUri = process.env.ZHIHU_REDIRECT_URI || `http://localhost:${port}/oauth/callback`;
+const dataDir = path.join(root, ".data");
+const choicesFile = path.join(dataDir, "webgal-choices.json");
 
 const mime = {
   ".html": "text/html; charset=utf-8",
@@ -91,19 +118,17 @@ function getBearerToken(req) {
 }
 
 function buildZhihuSign({ method, pathname, search, timestamp, logId, extraInfo }) {
-  if (process.env.ZHIHU_SIGN) return process.env.ZHIHU_SIGN;
-  if (!process.env.ZHIHU_SIGN_SECRET && !appKey) return "";
+  if (!appKey) return "";
 
   // The pasted docs list required signature headers but omit the canonical
   // string. Keep the algorithm isolated here so it can be adjusted once the
   // official quickstart's signature rule is available.
-  const secret = process.env.ZHIHU_SIGN_SECRET || appKey;
+  const secret = appKey;
   const canonical = [method.toUpperCase(), pathname, search || "", timestamp, logId, extraInfo || ""].join("\n");
   return crypto.createHmac("sha256", secret).update(canonical).digest("hex");
 }
 
 function zhihuStoryHeaders(req, targetUrl) {
-  const token = getBearerToken(req) || process.env.ZHIHU_ACCESS_TOKEN;
   const timestamp = String(Math.floor(Date.now() / 1000));
   const logId = uuidLike();
   const extraInfo = "";
@@ -125,12 +150,11 @@ function zhihuStoryHeaders(req, targetUrl) {
       extraInfo
     })
   };
-  if (token) headers.authorization = `Bearer ${token}`;
   return headers;
 }
 
 function openapiHeaders(req) {
-  const token = getBearerToken(req) || process.env.ZHIHU_ACCESS_TOKEN;
+  const token = getBearerToken(req);
   const headers = {
     accept: "application/json, text/plain, */*",
     "user-agent":
@@ -149,6 +173,52 @@ function readBody(req) {
     req.on("data", (chunk) => chunks.push(chunk));
     req.on("end", () => resolve(Buffer.concat(chunks)));
   });
+}
+
+function ensureDataDir() {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
+function readChoiceStore() {
+  try {
+    ensureDataDir();
+    if (!fs.existsSync(choicesFile)) return { sessions: {} };
+    const parsed = JSON.parse(fs.readFileSync(choicesFile, "utf8") || "{}");
+    return parsed && typeof parsed === "object" && parsed.sessions ? parsed : { sessions: {} };
+  } catch {
+    return { sessions: {} };
+  }
+}
+
+function writeChoiceStore(store) {
+  ensureDataDir();
+  fs.writeFileSync(choicesFile, JSON.stringify(store, null, 2));
+}
+
+function publicUser(user) {
+  if (!user || typeof user !== "object") return null;
+  const uid = user.uid ?? user.id ?? user.hash_id ?? "unknown";
+  return {
+    uid: String(uid),
+    fullname: String(user.fullname || user.name || "知乎用户"),
+    gender: String(user.gender || "unknown"),
+    headline: String(user.headline || ""),
+    avatar_path: String(user.avatar_path || "")
+  };
+}
+
+async function getZhihuUser(req) {
+  const token = getBearerToken(req);
+  if (!token) return null;
+  const target = new URL(`${openapiBase}/user`);
+  const result = await requestJson(target, {
+    method: "GET",
+    headers: openapiHeaders(req)
+  });
+  if (result.statusCode >= 400 || result.data?.code) {
+    return null;
+  }
+  return publicUser(result.data);
 }
 
 function requestJson(target, options, body) {
@@ -213,6 +283,130 @@ async function proxyOAuthToken(req, res) {
   sendJson(res, result.statusCode, { ok: result.statusCode < 400, data: result.data });
 }
 
+async function proxyOAuthUser(req, res) {
+  try {
+    const user = await getZhihuUser(req);
+    if (!user) {
+      sendJson(res, 401, { ok: false, message: "未授权或 access_token 已失效。" });
+      return;
+    }
+    sendJson(res, 200, { ok: true, user });
+  } catch (error) {
+    sendJson(res, 502, { ok: false, message: `获取知乎用户信息失败：${error.message}` });
+  }
+}
+
+function summarizeChoices(store, storyId) {
+  const sessions = Object.values(store.sessions || {}).filter((session) => session.storyId === storyId);
+  const byQuestion = {};
+  for (const session of sessions) {
+    const seenQuestions = new Set();
+    for (const choice of session.choices || []) {
+      const questionId = choice.questionId || choice.label;
+      if (!questionId || seenQuestions.has(questionId)) continue;
+      seenQuestions.add(questionId);
+      byQuestion[questionId] ??= {
+        questionId,
+        prompt: choice.prompt || "这一步她会怎么选？",
+        options: {},
+        total: 0
+      };
+      byQuestion[questionId].total += 1;
+      byQuestion[questionId].options[choice.label] ??= { label: choice.label, count: 0 };
+      byQuestion[questionId].options[choice.label].count += 1;
+    }
+  }
+  const questions = Object.values(byQuestion).map((question) => ({
+    ...question,
+    options: Object.values(question.options)
+      .map((option) => ({
+        ...option,
+        ratio: question.total > 0 ? option.count / question.total : 0
+      }))
+      .sort((a, b) => b.count - a.count)
+  }));
+  return {
+    storyId,
+    participants: sessions.length,
+    questions
+  };
+}
+
+async function recordWebgalChoice(req, res) {
+  try {
+    const payload = JSON.parse((await readBody(req)).toString("utf8") || "{}");
+    const storyId = String(payload.storyId || "white-moonlight");
+    const sessionId = String(payload.sessionId || "");
+    const choice = payload.choice || {};
+    if (!sessionId || !choice.label) {
+      sendJson(res, 400, { ok: false, message: "Missing sessionId or choice.label" });
+      return;
+    }
+    const user = await getZhihuUser(req);
+    if (!user) {
+      sendJson(res, 401, { ok: false, message: "需要知乎授权后记录选择。" });
+      return;
+    }
+    const store = readChoiceStore();
+    const sessionKey = `${storyId}:${sessionId}`;
+    const session = store.sessions[sessionKey] || {
+      storyId,
+      sessionId,
+      user,
+      choices: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    session.user = user;
+    session.updatedAt = new Date().toISOString();
+    const questionId = String(choice.questionId || choice.label);
+    const choiceRecord = {
+      questionId,
+      prompt: String(choice.prompt || ""),
+      label: String(choice.label || ""),
+      target: String(choice.target || ""),
+      selectedAt: new Date().toISOString()
+    };
+    const existingIndex = session.choices.findIndex((item) => item.questionId === questionId);
+    if (existingIndex >= 0) session.choices[existingIndex] = choiceRecord;
+    else session.choices.push(choiceRecord);
+    store.sessions[sessionKey] = session;
+    writeChoiceStore(store);
+    sendJson(res, 200, {
+      ok: true,
+      user,
+      session: {
+        storyId,
+        sessionId,
+        choices: session.choices
+      },
+      stats: summarizeChoices(store, storyId)
+    });
+  } catch (error) {
+    sendJson(res, 500, { ok: false, message: error.message });
+  }
+}
+
+function readWebgalStats(req, res) {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const storyId = url.searchParams.get("storyId") || "white-moonlight";
+  const sessionId = url.searchParams.get("sessionId") || "";
+  const store = readChoiceStore();
+  const session = sessionId ? store.sessions[`${storyId}:${sessionId}`] : null;
+  sendJson(res, 200, {
+    ok: true,
+    stats: summarizeChoices(store, storyId),
+    session: session
+      ? {
+          storyId,
+          sessionId,
+          user: session.user,
+          choices: session.choices || []
+        }
+      : null
+  });
+}
+
 async function proxyStory(req, res, kind) {
   if (!appKey) {
     sendJson(res, 428, {
@@ -275,8 +469,7 @@ async function proxyZhihu(req, res, endpoint) {
           loginRequired: true,
           status: upstream.statusCode,
           endpoint,
-          message:
-            "知乎接口需要登录态或 OAuth access token。请在页面的数据源设置里填入 Bearer token 或 Cookie，或用环境变量 ZHIHU_ACCESS_TOKEN / ZHIHU_COOKIE 启动服务。"
+          message: "知乎接口需要 OAuth access token。请先在页面完成知乎授权。"
         });
         return;
       }
@@ -348,6 +541,10 @@ const server = http.createServer((req, res) => {
     proxyOAuthToken(req, res);
     return;
   }
+  if (url.pathname === "/api/oauth/user") {
+    proxyOAuthUser(req, res);
+    return;
+  }
   if (url.pathname === "/api/zhihu/story_list") {
     proxyStory(req, res, "list");
     return;
@@ -358,6 +555,14 @@ const server = http.createServer((req, res) => {
   }
   if (url.pathname === "/api/webgal/start" && req.method === "POST") {
     writeWebgalScript(req, res);
+    return;
+  }
+  if (url.pathname === "/api/webgal/choice" && req.method === "POST") {
+    recordWebgalChoice(req, res);
+    return;
+  }
+  if (url.pathname === "/api/webgal/stats") {
+    readWebgalStats(req, res);
     return;
   }
   const endpoint = apiRoutes[url.pathname];

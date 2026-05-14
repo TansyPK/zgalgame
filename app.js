@@ -47,11 +47,101 @@ const fallbackAnswers = [
 
 let answers = [...fallbackAnswers];
 
+const webgalChoiceMap = {
+  "牵着她去写作业": {
+    questionId: "childhood",
+    prompt: "童年的亲密感出现时",
+    order: 1
+  },
+  "故意逗她慢慢追": {
+    questionId: "childhood",
+    prompt: "童年的亲密感出现时",
+    order: 1
+  },
+  "当众装作没听懂": {
+    questionId: "birthday",
+    prompt: "十岁生日那个被保留的位置",
+    order: 2
+  },
+  "把椅子拉近一点": {
+    questionId: "birthday",
+    prompt: "十岁生日那个被保留的位置",
+    order: 2
+  },
+  "认真牵住她的手": {
+    questionId: "confession",
+    prompt: "高二捅破窗户纸的时候",
+    order: 3
+  },
+  "用玩笑把脸红藏过去": {
+    questionId: "confession",
+    prompt: "高二捅破窗户纸的时候",
+    order: 3
+  },
+  "每周坐车去见她": {
+    questionId: "distance",
+    prompt: "异地恋刚开始时",
+    order: 4
+  },
+  "劝她先适应各自生活": {
+    questionId: "distance",
+    prompt: "异地恋刚开始时",
+    order: 4
+  },
+  "追问能不能再试一次": {
+    questionId: "breakup",
+    prompt: "她说异地太苦以后",
+    order: 5
+  },
+  "把体面留给彼此": {
+    questionId: "breakup",
+    prompt: "她说异地太苦以后",
+    order: 5
+  },
+  "相信这就是重新开始": {
+    questionId: "reunion",
+    prompt: "多年后重逢那顿晚饭前",
+    order: 6
+  },
+  "提醒自己别太快沉进去": {
+    questionId: "reunion",
+    prompt: "多年后重逢那顿晚饭前",
+    order: 6
+  },
+  "直接说我不喜欢这样的生活": {
+    questionId: "values",
+    prompt: "发现生活方式已经不同后",
+    order: 7
+  },
+  "说只要你开心就好": {
+    questionId: "values",
+    prompt: "发现生活方式已经不同后",
+    order: 7
+  },
+  "回到童年那扇后门": {
+    questionId: "ending",
+    prompt: "故事最后，你想停在哪里",
+    order: 8,
+    loops: true
+  },
+  "停在这里": {
+    questionId: "ending",
+    prompt: "故事最后，你想停在哪里",
+    order: 8,
+    ends: true
+  }
+};
+
 let state = {
   route: location.hash || "#/",
   vn: null,
   webgal: null,
   generation: null,
+  choiceStats: null,
+  choiceModal: null,
+  currentStoryId: null,
+  currentSessionId: sessionStorage.getItem("webgalSessionId") || "",
+  recordedChoices: [],
   showScript: true,
   dataSource: {
     status: "loading",
@@ -63,16 +153,33 @@ let state = {
     code: "",
     authorizeUrl: "",
     appReady: false,
-    appKeyReady: false
+    appKeyReady: false,
+    user: null
   }
 };
+
+if (!state.currentSessionId) {
+  state.currentSessionId =
+    globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  sessionStorage.setItem("webgalSessionId", state.currentSessionId);
+}
 
 window.addEventListener("hashchange", () => {
   state.route = location.hash || "#/";
   state.vn = null;
   state.webgal = null;
   state.generation = null;
+  state.choiceStats = null;
+  state.choiceModal = null;
   render();
+});
+
+window.addEventListener("message", (event) => {
+  if (event.origin !== location.origin) return;
+  if (event.data?.source !== "zgalgame-webgal") return;
+  if (event.data.type === "choice") {
+    recordWebgalChoice(String(event.data.label || "").trim());
+  }
 });
 
 function h(value) {
@@ -106,6 +213,46 @@ async function fetchJson(url, options = {}) {
     return { response, body: JSON.parse(text) };
   } catch {
     return { response, body: { ok: false, message: text } };
+  }
+}
+
+function zhihuLoginUrl() {
+  if (!state.auth.authorizeUrl) return "";
+  sessionStorage.setItem("pendingAuthRoute", state.route || "#/");
+  return state.auth.authorizeUrl;
+}
+
+function startZhihuAuth() {
+  const url = zhihuLoginUrl();
+  if (!url) return;
+  if (state.choiceModal?.continueStats) sessionStorage.setItem("showStatsAfterAuth", "true");
+  location.href = url;
+}
+
+function choiceOrderForQuestion(question) {
+  const labels = question?.options?.map((option) => option.label) || [];
+  const orders = labels
+    .map((label) => webgalChoiceMap[label]?.order)
+    .filter((order) => Number.isFinite(order));
+  return orders.length ? Math.min(...orders) : 99;
+}
+
+async function loadOAuthUser() {
+  if (!state.auth.token) {
+    state.auth.user = null;
+    return null;
+  }
+  try {
+    const { response, body } = await fetchJson("/api/oauth/user");
+    if (!response.ok || !body.ok) {
+      state.auth.user = null;
+      return null;
+    }
+    state.auth.user = body.user;
+    return body.user;
+  } catch {
+    state.auth.user = null;
+    return null;
   }
 }
 
@@ -168,6 +315,7 @@ function normalizeStory(item, index) {
   return {
     id,
     source: "zhihu",
+    immersiveEnabled: false,
     raw: item,
     title,
     author:
@@ -244,7 +392,7 @@ async function loadZhihuStories() {
   }
   state.dataSource = {
     status: "loading",
-    message: "正在使用 access_token 读取黑客松故事列表...",
+    message: "正在加载知乎开放内容库故事列表...",
     raw: null
   };
   render();
@@ -285,7 +433,7 @@ async function loadZhihuStories() {
     answers = [...fallbackAnswers, ...items.slice(0, 12).map(normalizeStory)];
     state.dataSource = {
       status: "live",
-      message: `OAuth 已授权，已追加黑客松故事 ${answers.length - fallbackAnswers.length} 条。`,
+      message: `已追加知乎开放内容库故事 ${answers.length - fallbackAnswers.length} 条。`,
       raw: body
     };
     render();
@@ -344,10 +492,19 @@ async function initOAuth() {
       };
       render();
       await exchangeAuthCode(code);
-      history.replaceState({}, "", location.pathname + location.hash);
+      const pendingRoute = sessionStorage.getItem("pendingAuthRoute") || "#/";
+      sessionStorage.removeItem("pendingAuthRoute");
+      state.route = pendingRoute;
+      history.replaceState({}, "", location.pathname + pendingRoute);
+      render();
+      if (sessionStorage.getItem("showStatsAfterAuth") === "true") {
+        sessionStorage.removeItem("showStatsAfterAuth");
+        await showChoiceStats();
+      }
       return;
     }
     if (state.auth.token) {
+      await loadOAuthUser();
       await loadZhihuStories();
       return;
     }
@@ -386,6 +543,7 @@ async function exchangeAuthCode(code) {
     }
     state.auth.token = token;
     sessionStorage.setItem("zhihuAccessToken", token);
+    await loadOAuthUser();
     await loadZhihuStories();
   } catch (error) {
     state.dataSource = {
@@ -398,13 +556,18 @@ async function exchangeAuthCode(code) {
 }
 
 function appChrome(content) {
+  const user = state.auth.user;
   return `
     <header class="topbar">
       <div class="topbar-inner">
         <div class="logo">知乎</div>
         <nav class="nav"><span>首页</span><span>会员</span><span>发现</span><span>等你来答</span></nav>
         <div class="search">搜索你感兴趣的问题</div>
-        <button class="primary-btn" type="button">提问</button>
+        ${
+          user
+            ? `<button class="user-pill" type="button" data-show-stats><span class="avatar">${h(user.fullname).slice(0, 1)}</span><b>${h(user.fullname)}</b></button>`
+            : `<button class="primary-btn" type="button" data-oauth-login ${state.auth.authorizeUrl ? "" : "disabled"}>知乎授权</button>`
+        }
       </div>
     </header>
     ${content}
@@ -412,22 +575,38 @@ function appChrome(content) {
 }
 
 function renderDataSourcePanel() {
-  if (!state.auth.token && state.dataSource.status !== "error") return "";
+  if (state.dataSource.status !== "error") return "";
   return `
     <section class="data-source ${state.dataSource.status}">
       <div>
-        <b>${state.dataSource.status === "live" ? "已同步内容" : "内容同步"}</b>
+        <b>内容同步</b>
         <span>${h(state.dataSource.message)}</span>
       </div>
-      <details>
-        <summary>账号设置</summary>
-          <div class="auth-grid">
-            <button class="primary-btn" type="button" data-oauth-login ${state.auth.authorizeUrl ? "" : "disabled"}>知乎 OAuth 登录</button>
-            <label>Access Token<input type="password" value="${h(state.auth.token)}" data-auth-token placeholder="授权回调会自动填入，也可手动粘贴" /></label>
-          <button class="ghost-btn" type="button" data-save-auth>保存 token</button>
-          <button class="ghost-btn" type="button" data-clear-auth>清除授权</button>
+      <button class="ghost-btn" type="button" data-oauth-login ${state.auth.authorizeUrl ? "" : "disabled"}>重新授权</button>
+    </section>
+  `;
+}
+
+function renderStoryLibraryGate() {
+  const loadedCount = answers.filter((answer) => answer.source === "zhihu").length;
+  if (state.auth.token) {
+    return `
+      <section class="story-library-gate loaded">
+        <div>
+          <b>已连接知乎开放内容库</b>
+          <span>${loadedCount ? `已加载 ${loadedCount} 个故事概要。` : "授权已完成，暂未获取到更多故事。"}</span>
         </div>
-      </details>
+        <button class="ghost-btn" type="button" data-show-stats>查看选择统计</button>
+      </section>
+    `;
+  }
+  return `
+    <section class="story-library-gate">
+      <div>
+        <b>授权后加载更多知乎故事</b>
+        <span>不授权也可以完整体验「白月光吧。」；授权后会追加开放内容库的故事概要，并可查看参与者选择统计。</span>
+      </div>
+      <button class="primary-btn" type="button" data-oauth-login ${state.auth.authorizeUrl ? "" : "disabled"}>知乎授权</button>
     </section>
   `;
 }
@@ -435,19 +614,24 @@ function renderDataSourcePanel() {
 function renderFeed() {
   const cards = answers
     .map(
-      (answer) => `
+      (answer) => {
+        const canImmerse = answer.id === "white-moonlight";
+        return `
         <article class="answer-card">
           <button type="button" data-open="${answer.id}">
             <div class="answer-card-content">
               <div>
-                <div class="card-kicker"><span>可沉浸体验</span><span>预计 ${answer.paragraphs.length + 3} 幕</span></div>
+                <div class="card-kicker">
+                  <span>${canImmerse ? "可沉浸体验" : "知乎开放内容库"}</span>
+                  <span>${canImmerse ? `预计 ${answer.paragraphs.length + 3} 幕` : "授权后加载"}</span>
+                </div>
                 <h2 class="answer-title">${h(answer.title)}</h2>
                 <div class="author-line"><span class="avatar">${h(answer.avatar)}</span><b>${h(answer.author)}</b><span>${h(answer.bio)}</span></div>
                 <p class="excerpt">${h(answer.excerpt)} ${h(answer.paragraphs[1])}</p>
                 ${
-                  answer.id === "white-moonlight"
+                  canImmerse
                     ? `<div class="card-immerse-entry"><b>这篇故事可以像短篇互动小说一样进入。</b><span>打开详情页，点击「沉浸式体验」。</span></div>`
-                    : ""
+                    : `<div class="card-immerse-entry muted"><b>已接入故事概要。</b><span>当前仅展示列表与详情文本，沉浸式转换先保留给主示例。</span></div>`
                 }
                 <div class="action-line"><span class="vote">赞同 ${h(answer.votes)}</span><span>${h(answer.comments)} 条评论</span><span>收藏</span><span>喜欢</span></div>
               </div>
@@ -455,7 +639,8 @@ function renderFeed() {
             </div>
           </button>
         </article>
-      `
+      `;
+      }
     )
     .join("");
 
@@ -466,6 +651,7 @@ function renderFeed() {
         <section>
           <div class="feed-tabs"><span>推荐</span><span>关注</span><span>热榜</span><span>盐选</span></div>
           <div class="answer-list">${cards}</div>
+          ${renderStoryLibraryGate()}
         </section>
         <aside class="side-panel">
           <h3 class="side-title">热门收藏</h3>
@@ -477,11 +663,13 @@ function renderFeed() {
         </aside>
       </div>
     </main>
+    ${renderChoiceModal()}
   `);
 }
 
 function renderDetail(answer) {
   const body = answer.paragraphs.map((p) => `<p>${highlight(p)}</p>`).join("");
+  const canImmerse = answer.id === "white-moonlight";
   return appChrome(`
     <main class="page">
       ${renderDataSourcePanel()}
@@ -494,10 +682,14 @@ function renderDetail(answer) {
               <span class="avatar">${h(answer.avatar)}</span>
               <div><div class="author-name">${h(answer.author)}</div><div class="author-bio">${h(answer.bio)}</div></div>
             </div>
-            <button class="immerse-btn" type="button" data-immerse="${answer.id}">
-              <svg class="spark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9L12 2zm7 11l.9 2.7L23 17l-3.1 1.3L19 21l-.9-2.7L15 17l3.1-1.3L19 13zM5 14l.8 2.2L8 17l-2.2.8L5 20l-.8-2.2L2 17l2.2-.8L5 14z"/></svg>
-              沉浸式体验
-            </button>
+            ${
+              canImmerse
+                ? `<button class="immerse-btn" type="button" data-immerse="${answer.id}">
+                    <svg class="spark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2l1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9L12 2zm7 11l.9 2.7L23 17l-3.1 1.3L19 21l-.9-2.7L15 17l3.1-1.3L19 13zM5 14l.8 2.2L8 17l-2.2.8L5 20l-.8-2.2L2 17l2.2-.8L5 14z"/></svg>
+                    沉浸式体验
+                  </button>`
+                : `<span class="library-badge">故事概要</span>`
+            }
           </div>
           ${
             answer.detailLoading || answer.detailError
@@ -516,11 +708,19 @@ function renderDetail(answer) {
           </div>
         </article>
         <aside class="side-panel">
-          <button class="side-immerse" type="button" data-immerse="${answer.id}">
-            <span class="side-immerse-scene"></span>
-            <b>进入这个故事</b>
-            <small>从“如果当年”开始，走一次不同的选择。</small>
-          </button>
+          ${
+            canImmerse
+              ? `<button class="side-immerse" type="button" data-immerse="${answer.id}">
+                  <span class="side-immerse-scene"></span>
+                  <b>进入这个故事</b>
+                  <small>从“如果当年”开始，走一次不同的选择。</small>
+                </button>`
+              : `<div class="side-immerse static">
+                  <span class="side-immerse-scene"></span>
+                  <b>开放内容库故事</b>
+                  <small>当前仅展示故事概要，沉浸式体验以「白月光吧。」作为主示例。</small>
+                </div>`
+          }
           <h3 class="side-title">相关问题</h3>
           <ul class="creator-list">
             <li><b>你心里的白月光后来怎么样了？</b><small>4,218 个回答</small></li>
@@ -531,6 +731,7 @@ function renderDetail(answer) {
         </aside>
       </div>
     </main>
+    ${renderChoiceModal()}
   `);
 }
 
@@ -748,6 +949,9 @@ function sanitize(text) {
 
 async function openImmersive(id) {
   const answer = getAnswer(id);
+  if (answer.source === "zhihu" && answer.immersiveEnabled === false) return;
+  state.currentStoryId = answer.id;
+  state.recordedChoices = [];
   await startGenerationFlow({ answer, immersive: buildImmersive(answer) });
 }
 
@@ -828,9 +1032,13 @@ async function startWebgalRuntime(source = state.vn) {
     body: JSON.stringify({ script: immersive.script })
   });
   state.webgal = {
+    storyId: answer.id,
     title: answer.title,
     src: `/webgal-runtime/index.html?t=${Date.now()}`
   };
+  state.currentStoryId = answer.id;
+  state.recordedChoices = [];
+  state.choiceStats = null;
   state.generation = null;
   state.vn = null;
   render();
@@ -840,6 +1048,74 @@ async function startWebgalRuntime(source = state.vn) {
       block: "start"
     });
   });
+}
+
+async function recordWebgalChoice(label) {
+  if (!state.webgal) return;
+  const meta = webgalChoiceMap[label] || {
+    questionId: label,
+    prompt: "这一步她会怎么选？",
+    order: 99
+  };
+  if (meta.loops) {
+    state.recordedChoices = [];
+    state.choiceStats = null;
+  }
+  const choice = {
+    questionId: meta.questionId,
+    prompt: meta.prompt,
+    order: meta.order,
+    label
+  };
+  state.recordedChoices = [
+    ...state.recordedChoices.filter((item) => item.questionId !== choice.questionId),
+    choice
+  ].sort((a, b) => (a.order || 99) - (b.order || 99));
+  if (state.auth.token) {
+    try {
+      const { body } = await fetchJson("/api/webgal/choice", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          storyId: state.webgal.storyId,
+          sessionId: state.currentSessionId,
+          choice
+        })
+      });
+      if (body.ok) {
+        state.choiceStats = body.stats;
+      }
+    } catch {
+      // Choice tracking must not interrupt the story.
+    }
+  }
+  if (meta.ends) {
+    await showChoiceStats();
+  }
+}
+
+async function showChoiceStats() {
+  const storyId = state.currentStoryId || "white-moonlight";
+  try {
+    const query = new URLSearchParams({
+      storyId,
+      sessionId: state.currentSessionId
+    });
+    const { body } = await fetchJson(`/api/webgal/stats?${query}`);
+    state.choiceStats = body.stats || state.choiceStats;
+    state.recordedChoices = body.session?.choices || state.recordedChoices;
+  } catch {
+    // Fall back to locally recorded choices.
+  }
+  state.choiceModal = {
+    type: state.auth.token ? "stats" : "stats-auth",
+    title: state.auth.token ? (state.currentStoryId ? "你的选择路径" : "参与者选择统计") : "你完成了一次选择路径",
+    message: state.auth.token
+      ? "这些节点展示了你和所有参与者的选择差异。"
+      : "不授权也可以完整体验。授权后，你的路径会计入统计，并可查看所有参与者的选择分布。",
+    continueStats: true
+  };
+  render();
 }
 
 function renderWebgalRuntime() {
@@ -857,6 +1133,85 @@ function renderWebgalRuntime() {
       </div>
       <iframe class="webgal-frame" src="${h(state.webgal.src)}" title="OpenWebGAL Runtime"></iframe>
     </section>
+  `;
+}
+
+function renderChoiceModal() {
+  if (!state.choiceModal) return "";
+  if (state.choiceModal.type === "auth" || state.choiceModal.type === "stats-auth") {
+    return `
+      <div class="choice-modal-backdrop" role="dialog" aria-modal="true">
+        <section class="choice-modal auth-modal">
+          <button class="modal-close" type="button" data-close-choice-modal aria-label="关闭">×</button>
+          <h2>${h(state.choiceModal.title)}</h2>
+          <p>${h(state.choiceModal.message)}</p>
+          ${
+            state.recordedChoices.length
+              ? `<div class="local-choice-path">
+                  ${state.recordedChoices
+                    .map((choice) => `<span>${h(choice.label)}</span>`)
+                    .join("")}
+                </div>`
+              : ""
+          }
+          <div class="modal-actions">
+            <button class="primary-btn" type="button" data-oauth-login ${state.auth.authorizeUrl ? "" : "disabled"}>知乎授权</button>
+            <button class="ghost-btn" type="button" data-close-choice-modal>暂不进入</button>
+          </div>
+        </section>
+      </div>
+    `;
+  }
+  const stats = state.choiceStats || { participants: 0, questions: [] };
+  const myChoices = new Map((state.recordedChoices || []).map((choice) => [choice.questionId, choice]));
+  const questions = [...(stats.questions || [])].sort((a, b) => {
+    return choiceOrderForQuestion(a) - choiceOrderForQuestion(b);
+  });
+  const rows = questions
+    .map((question) => {
+      const mine = myChoices.get(question.questionId);
+      const options = question.options
+        .map((option) => {
+          const percent = Math.round((option.ratio || 0) * 100);
+          const selected = mine?.label === option.label;
+          return `
+            <div class="stat-option ${selected ? "mine" : ""}">
+              <div class="stat-option-head">
+                <span>${h(option.label)}</span>
+                <b>${percent}%</b>
+              </div>
+              <div class="stat-bar" style="--value: ${percent}%"><span></span></div>
+            </div>
+          `;
+        })
+        .join("");
+      return `
+        <article class="stat-question">
+          <div class="stat-question-head">
+            <b>${h(question.prompt)}</b>
+            ${mine ? `<span>你选了：${h(mine.label)}</span>` : `<span>你未经过这个节点</span>`}
+          </div>
+          ${options}
+        </article>
+      `;
+    })
+    .join("");
+  return `
+    <div class="choice-modal-backdrop" role="dialog" aria-modal="true">
+      <section class="choice-modal stats-modal">
+        <button class="modal-close" type="button" data-close-choice-modal aria-label="关闭">×</button>
+        <div class="stats-head">
+          <div>
+            <h2>${h(state.choiceModal.title)}</h2>
+            <p>${h(state.choiceModal.message)}</p>
+          </div>
+          <div class="participant-count"><b>${h(stats.participants || 0)}</b><span>位参与者</span></div>
+        </div>
+        <div class="stats-list">
+          ${rows || `<div class="empty-stats">目前还没有足够的选择记录。</div>`}
+        </div>
+      </section>
+    </div>
   `;
 }
 
@@ -940,20 +1295,28 @@ function renderVn() {
 }
 
 function bindEvents() {
-  document.querySelector("[data-oauth-login]")?.addEventListener("click", () => {
-    if (state.auth.authorizeUrl) location.href = state.auth.authorizeUrl;
-  });
-
-  document.querySelector("[data-save-auth]")?.addEventListener("click", () => {
-    state.auth.token = document.querySelector("[data-auth-token]")?.value.trim() || "";
-    sessionStorage.setItem("zhihuAccessToken", state.auth.token);
-    loadZhihuStories();
+  document.querySelectorAll("[data-oauth-login]").forEach((button) => {
+    button.addEventListener("click", () => {
+      startZhihuAuth();
+    });
   });
 
   document.querySelector("[data-clear-auth]")?.addEventListener("click", () => {
     state.auth.token = "";
+    state.auth.user = null;
     sessionStorage.removeItem("zhihuAccessToken");
     loadZhihuStories();
+  });
+
+  document.querySelectorAll("[data-close-choice-modal]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.choiceModal = null;
+      render();
+    });
+  });
+
+  document.querySelector("[data-show-stats]")?.addEventListener("click", () => {
+    showChoiceStats();
   });
 
   document.querySelectorAll("[data-open]").forEach((button) => {

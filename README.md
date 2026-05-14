@@ -8,7 +8,7 @@
 - 未授权状态下也可体验内置故事。
 - 点击「沉浸式体验」后生成 `game/scene/start.txt`。
 - 页面内嵌 OpenWebGAL runtime，保留 `PRESS ENTER` 入口并自动进入故事。
-- 可选知乎 OAuth 接入；配置完成后可扩展真实故事列表。
+- 可选知乎 OAuth 接入；授权后追加知乎开放内容库故事概要，并可查看选择统计。
 
 ## 运行
 
@@ -35,13 +35,7 @@ ZHIHU_REDIRECT_URI=http://127.0.0.1:5173/oauth/callback \
 npm start
 ```
 
-也可以用已有 token 启动：
-
-```bash
-ZHIHU_ACCESS_TOKEN=your_access_token npm start
-```
-
-不要把 `.env`、access token、app key 或任何私有凭据提交到仓库。
+不要把 `.env`、app key 或任何私有凭据提交到仓库。
 
 ## 目录
 
