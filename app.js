@@ -477,7 +477,7 @@ async function hydrateDetail(answer) {
 
 async function initOAuth() {
   const params = new URLSearchParams(location.search);
-  const code = params.get("code");
+  const code = params.get("code") || params.get("authorization_code");
   try {
     const { body } = await fetchJson("/api/oauth/config");
     state.auth.authorizeUrl = body.authorizeUrl || "";

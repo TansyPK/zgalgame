@@ -72,7 +72,7 @@ function sendJson(res, status, body) {
 }
 
 function serveStatic(req, res, pathname) {
-  const entryPath = pathname === "/" || pathname === "/oauth/callback" ? "/index.html" : pathname;
+  const entryPath = pathname === "/" || pathname.startsWith("/oauth/callback") ? "/index.html" : pathname;
   const safePath = path.normalize(entryPath).replace(/^(\.\.[/\\])+/, "");
   let filePath = path.join(root, safePath);
   if (!filePath.startsWith(root)) {
